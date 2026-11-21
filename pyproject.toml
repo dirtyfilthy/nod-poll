@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nod-poll"
+version = "0.1.0"
+description = "Ask a panel of models the same question through Nod, then tally the points they agree on."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "alhazred" }]
+dependencies = ["nod"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+nod-poll = "nod_poll.cli:main"
+
+[tool.uv.sources]
+nod = { git = "ssh://git@github.com/dirtyfilthy/nod.git", branch = "main" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nod_poll"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
