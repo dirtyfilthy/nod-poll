@@ -7,14 +7,16 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from nod.messages import Message
 from nod.provider import OpenAICompatibleProvider, ProviderError
 
 from nod_poll import report
-from nod_poll.panel import ANSWER_FILE, Answer, CostMeter, ask
+from nod_poll.panel import ANSWER_FILE, Answer, ask, write_config
 from nod_poll.tally import JudgeError, tally
 
 DEFAULT_MODELS = [
@@ -26,6 +28,21 @@ DEFAULT_MODELS = [
 ]
 DEFAULT_JUDGE = "anthropic/claude-sonnet-5.5"
 DEFAULT_RUNS_DIR = "~/.nod-poll/runs"
+
+
+class CostMeter:
+    """Wraps the judge's provider and adds up what its calls cost."""
+
+    def __init__(self, inner: OpenAICompatibleProvider) -> None:
+        self.inner = inner
+        self.cost = 0.0
+        self._lock = threading.Lock()
+
+    def complete(self, messages, tools=None, on_token=None) -> Message:
+        reply = self.inner.complete(messages, tools, on_token)
+        with self._lock:
+            self.cost += (reply.meta.get("usage") or {}).get("cost") or 0.0
+        return reply
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
                    help=f"Model that extracts and groups the points (default: {DEFAULT_JUDGE}).")
     p.add_argument("-o", "--out", help=f"Run directory (default: {DEFAULT_RUNS_DIR}/<time>-<question>).")
     p.add_argument("--max-turns", type=int, default=40, help="Agent loop limit per model (default: 40).")
+    p.add_argument("--timeout", type=float, default=1200,
+                   help="Seconds each model gets before it is stopped (default: 1200).")
     p.add_argument("--effort", choices=["low", "medium", "high"],
                    help="Reasoning effort sent to every panelist (default: each model's own).")
     p.add_argument("--retally", metavar="RUN_DIR",
@@ -76,18 +95,20 @@ def _poll(args: argparse.Namespace) -> int:
     (run_dir / "question.md").write_text(question.strip() + "\n", encoding="utf-8")
     (run_dir / "run.json").write_text(json.dumps(
         {"question": question, "repo": str(repo) if repo else None, "models": models,
-         "max_turns": args.max_turns, "effort": args.effort}, indent=2) + "\n", encoding="utf-8")
+         "max_turns": args.max_turns, "timeout": args.timeout, "effort": args.effort},
+        indent=2) + "\n", encoding="utf-8")
     # Fail now on a missing key rather than once per panelist.
     OpenAICompatibleProvider(model=args.judge)
 
     print(f"run: {run_dir}")
     print(f"asking {len(models)} models" + (f" about {repo}" if repo else "") + "...")
     reasoning = {"effort": args.effort} if args.effort else None
+    config = write_config(run_dir, has_repo=repo is not None, reasoning=reasoning)
     answers: dict[str, Answer] = {}
     with ThreadPoolExecutor(max_workers=len(models)) as pool:
         futures = {
-            pool.submit(ask, m, question, run_dir, repo=repo,
-                        max_turns=args.max_turns, reasoning=reasoning): m
+            pool.submit(ask, m, run_dir / "question.md", run_dir, config, repo=repo,
+                        max_turns=args.max_turns, timeout=args.timeout): m
             for m in models
         }
         for f in as_completed(futures):

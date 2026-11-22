@@ -91,7 +91,7 @@ wheels = [
 [[package]]
 name = "nod"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/dirtyfilthy/nod.git?branch=main#5a7a76395c771fee1058dab6b7d6e49f28c03123" }
+source = { git = "ssh://git@github.com/dirtyfilthy/nod.git?branch=main#e3baf09cd352fb8c11fc96799e0778eb332b48c1" }
 dependencies = [
     { name = "httpx" },
 ]

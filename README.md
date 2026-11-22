@@ -3,10 +3,12 @@
 Ask a panel of models the same question, optionally about a codebase, then
 group the points they make and count how many models made each one.
 
-Each model runs as its own [Nod](https://github.com/dirtyfilthy/nod) agent through OpenRouter. Its tools run in a
-Docker sandbox with **no network**: the codebase is mounted read-only at `/repo`, and
-the model writes its answer to `/workspace/answer.md`, which is that model's folder
-in the run directory on the host. Nod's loop and your API key stay on the host.
+Each model is its own [Nod](https://github.com/dirtyfilthy/nod) one-shot run
+(`nod --model <id> --no-network ... run`) through OpenRouter, using the Nod this
+package is installed with. Its tools run in a Docker sandbox with **no network**
+(and Nod tells the model so): the codebase is mounted read-only at `/repo`, and the
+model writes its answer to `/workspace/answer.md`, which is that model's folder in
+the run directory on the host. Nod's loop and your API key stay on the host.
 
 ```sh
 export OPENROUTER_API_KEY=sk-or-...
@@ -24,7 +26,9 @@ uv run nod-poll --retally ~/.nod-poll/runs/20261121-...   # re-tally without ask
   report.json             the same, plus every extracted claim and which group it landed in
   question.md, run.json
   answers/<model>/answer.md   each model's own answer (its /workspace)
-  sessions/<model>/           Nod's transcript for that model
+  sessions/<model>.jsonl      Nod's transcript for that model (`nod chat --session` can resume it)
+  logs/<model>.log            the nod command line and its stderr
+  nod/                        the Nod config and panelist prompt generated for the run
 ```
 
 Runs go to `~/.nod-poll/runs/<time>-<question>` unless you pass `-o` or set
@@ -32,8 +36,10 @@ Runs go to `~/.nod-poll/runs/<time>-<question>` unless you pass `-o` or set
 
 ## How the counting works
 
-1. **Ask.** Each model runs in parallel with a panelist prompt that asks for one
-   point per bullet with `path:line` citations.
+1. **Ask.** Each model runs in parallel with a panelist prompt (the run's Nod soul)
+   that asks for one point per bullet with `path:line` citations. A model that ends
+   without writing `answer.md` (out of turns or time) gets one short `nod run
+   --session` follow-up telling it to write what it has.
 2. **Extract.** A judge model (`-j`, default Sonnet 5.5) splits each answer on its
    own into self-contained claims.
 3. **Group.** One judge call sees every claim with only an opaque id (`b3` = answer
@@ -52,10 +58,16 @@ Runs go to `~/.nod-poll/runs/<time>-<question>` unless you pass `-o` or set
 | `-j/--judge` | `$NOD_POLL_JUDGE`, else `anthropic/claude-sonnet-5.5` |
 | `-r/--repo` | none: no codebase is mounted |
 | `--max-turns` | 40 provider round-trips per model |
+| `--timeout` | 1200 s per model, then SIGTERM (Nod removes its container) |
 | `--effort` | each model's own reasoning effort |
 
-OpenRouter chooses the upstream provider for every model (no routing pin), unlike
-Nod's own config.
+The generated config sets `provider_routing = {}`, so OpenRouter chooses the
+upstream provider for every model (Nod's default pins `deepseek/` models to
+DeepSeek's own deployment, which not every account can use). The model and turn
+limit go on the command line (`--model`, `--max-turns`). Cost per model comes from
+the `[usage {...}]` line `nod run` ends stderr with, compaction calls included; a
+model stopped by `--timeout` prints none, so its cost is summed from its session
+file instead.
 
 ## Install
 
