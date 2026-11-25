@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from nod_poll.panel import Answer
-from nod_poll.tally import Claim, Tally
+from nod_poll.tally import Claim, Point, Tally
 
 
 def short(model: str) -> str:
@@ -34,6 +34,13 @@ def render(
 
     if tally and tally.points:
         n = tally.panel_size
+        raters = {r.panelist for p in tally.points for r in p.ratings}
+        if raters:
+            out.append(
+                f"Rated by {len(raters)} of {len(answered)} models. A point's score is the mean "
+                "of the 1-5 ratings from the models that didn't make it, and each section is "
+                "sorted by it.\n"
+            )
         shared = [p for p in tally.points if p.count > 1]
         lone = [p for p in tally.points if p.count == 1]
         num = 0
@@ -69,9 +76,19 @@ def render(
     return "\n".join(out) + "\n"
 
 
-def _point(num: int, p, n: int) -> str:
+def _point(num: int, p: Point, n: int) -> str:
     who = ", ".join(short(m) for m in p.panelists)
-    return f"{num}. **[{p.count}/{n}]** {p.point}  \n   _{who}_\n"
+    if p.score is None:
+        return f"{num}. **[{p.count}/{n}]** {p.point}  \n   _{who}_\n"
+    shown = p.peer_ratings if p.scored_by_peers else p.ratings
+    scores = ", ".join(f"{short(r.panelist)} {r.score}" for r in shown)
+    by = "" if p.scored_by_peers else " (its own authors; nobody else rated it)"
+    lines = [f"{num}. **[{p.count}/{n} · {p.score:.1f}]** {p.point}  ",
+             f"   _{who}_ · rated {scores}{by}"]
+    # Why a model that didn't make the point marked it down.
+    lines += [f"   - {short(r.panelist)} ({r.score}): {r.note}"
+              for r in p.peer_ratings if r.score <= 2 and r.note]
+    return "\n".join(lines) + "\n"
 
 
 def write(
@@ -101,6 +118,8 @@ def write(
                 "point": p.point,
                 "count": p.count,
                 "panelists": p.panelists,
+                "score": None if p.score is None else round(p.score, 2),
+                "ratings": [asdict(r) for r in p.ratings],
                 "claims": [asdict(c) for c in p.claims],
             }
             for p in (tally.points if tally else [])

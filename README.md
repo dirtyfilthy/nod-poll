@@ -15,7 +15,9 @@ export OPENROUTER_API_KEY=sk-or-...
 uv run nod-poll -r ~/src/someproject "Where is auth enforced, and where could it be bypassed?"
 uv run nod-poll -m anthropic/claude-sonnet-5.5,openai/gpt-6.2-sol "Tabs or spaces?"
 echo "long question..." | uv run nod-poll -r . -
+uv run nod-poll --rate -r ~/src/someproject "What modules is this missing?"   # panel also scores every point
 uv run nod-poll --retally ~/.nod-poll/runs/20261121-...   # re-tally without asking the panel again
+uv run nod-poll --retally ~/.nod-poll/runs/20261121-... --rate   # ...and have the panel rate the result
 ```
 
 ## What a run leaves behind
@@ -26,6 +28,8 @@ uv run nod-poll --retally ~/.nod-poll/runs/20261121-...   # re-tally without ask
   report.json             the same, plus every extracted claim and which group it landed in
   question.md, run.json
   answers/<model>/answer.md   each model's own answer (its /workspace)
+  answers/<model>/ratings.json   with --rate: that model's score for each point
+  ratings/                    with --rate: the task each model was sent, and points.json (the ids it used)
   sessions/<model>.jsonl      Nod's transcript for that model (`nod chat --session` can resume it)
   logs/<model>.log            the nod command line and its stderr
   nod/                        the Nod config and panelist prompt generated for the run
@@ -50,6 +54,27 @@ Runs go to `~/.nod-poll/runs/<time>-<question>` unless you pass `-o` or set
    claims from one model in the same group count once. Claims the judge drops come
    back as points of their own, and ids it invents are ignored.
 
+## Rating the points (`--rate`)
+
+The count says how many models thought of a point, not whether it is any good. A
+point only one model made may be the best idea in the run or a mistake, which
+matters most when the question is a brainstorm. With `--rate`, after the tally
+every model that answered gets the full list of points, with no model names and
+no counts, in an order shuffled per model, and scores each from 1 (wrong, or not
+worth doing) to 5 (right and important) with a one-line reason.
+
+- Each model rates in its own session, so it still knows what it found in the
+  codebase, and may check `/repo` again. The round is limited to 12 turns and 600 s
+  per model, and its cost is added to that model's row in the report.
+- A point's score is the mean rating from the models that did **not** make it.
+  A point every rater made has no such ratings, so it shows their own and says so.
+- The report keeps its two sections (points several models made, points one model
+  made) and sorts each by score. Under a point it lists who gave what, and the
+  reason from any model that gave it 1 or 2.
+- A model that fails to rate is left out of the scores; the run still succeeds.
+- `--retally` on its own regroups the points, so it drops earlier ratings. Add
+  `--rate` to rate the new points; that needs Docker and the run's `sessions/`.
+
 ## Options
 
 | Flag | Default |
@@ -60,6 +85,7 @@ Runs go to `~/.nod-poll/runs/<time>-<question>` unless you pass `-o` or set
 | `--max-turns` | 40 provider round-trips per model |
 | `--timeout` | 1200 s per model, then SIGTERM (Nod removes its container) |
 | `--effort` | each model's own reasoning effort |
+| `--rate` | off: no rating round |
 
 The generated config sets `provider_routing = {}`, so OpenRouter chooses the
 upstream provider for every model (Nod's default pins `deepseek/` models to
