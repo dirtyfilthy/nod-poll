@@ -19,7 +19,7 @@ dev = ["pytest>=8.0"]
 nod-poll = "nod_poll.cli:main"
 
 [tool.uv.sources]
-nod = { git = "ssh://git@github.com/dirtyfilthy/nod.git", branch = "main" }
+nod = { git = "https://github.com/dirtyfilthy/nod.git", branch = "main" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nod_poll"]

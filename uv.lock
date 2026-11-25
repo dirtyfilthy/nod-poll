@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11"
 
 [[package]]
@@ -91,7 +91,7 @@ wheels = [
 [[package]]
 name = "nod"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/dirtyfilthy/nod.git?branch=main#e3baf09cd352fb8c11fc96799e0778eb332b48c1" }
+source = { git = "https://github.com/dirtyfilthy/nod.git?branch=main#e3baf09cd352fb8c11fc96799e0778eb332b48c1" }
 dependencies = [
     { name = "httpx" },
 ]
@@ -111,7 +111,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nod", git = "ssh://git@github.com/dirtyfilthy/nod.git?branch=main" },
+    { name = "nod", git = "https://github.com/dirtyfilthy/nod.git?branch=main" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
 ]
 provides-extras = ["dev"]

@@ -72,10 +72,10 @@ file instead.
 ## Install
 
 ```sh
-uv tool install git+ssh://git@github.com/dirtyfilthy/nod-poll.git
+uv tool install git+https://github.com/dirtyfilthy/nod-poll.git
 ```
 
-Nod is pulled from its private GitHub repo over SSH, pinned in `uv.lock`
+[Nod](https://github.com/dirtyfilthy/nod) is pulled from GitHub, pinned in `uv.lock`
 (`uv lock --upgrade-package nod` moves it to the latest `main`). To try changes
 to a local Nod checkout, run `uv run --with-editable ../nod nod-poll ...`.
 
@@ -86,3 +86,8 @@ uv run --extra dev pytest -q
 ```
 
 They use a fake judge, so they need neither Docker nor an API key.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
