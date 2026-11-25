@@ -73,14 +73,41 @@ class Claim:
 
 
 @dataclass
+class Rating:
+    panelist: str
+    score: int  # 1 (wrong or not worth doing) to 5 (right and important)
+    note: str = ""
+
+
+@dataclass
 class Point:
     point: str
     panelists: list[str]
     claims: list[Claim] = field(default_factory=list)
+    # Filled by the rating round (rating.py), empty without it.
+    ratings: list[Rating] = field(default_factory=list)
 
     @property
     def count(self) -> int:
         return len(self.panelists)
+
+    @property
+    def peer_ratings(self) -> list[Rating]:
+        """Ratings from the panelists who didn't make this point."""
+
+        return [r for r in self.ratings if r.panelist not in self.panelists]
+
+    @property
+    def scored_by_peers(self) -> bool:
+        return bool(self.peer_ratings)
+
+    @property
+    def score(self) -> float | None:
+        """Mean peer rating. A point every rater made has no peers, so it falls
+        back to their ratings of their own point."""
+
+        rs = self.peer_ratings or self.ratings
+        return sum(r.score for r in rs) / len(rs) if rs else None
 
 
 @dataclass

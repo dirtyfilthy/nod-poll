@@ -15,7 +15,7 @@ from pathlib import Path
 from nod.messages import Message
 from nod.provider import OpenAICompatibleProvider, ProviderError
 
-from nod_poll import report
+from nod_poll import rating, report
 from nod_poll.panel import ANSWER_FILE, Answer, ask, write_config
 from nod_poll.tally import JudgeError, tally
 
@@ -65,13 +65,16 @@ def main(argv: list[str] | None = None) -> int:
                    help="Seconds each model gets before it is stopped (default: 1200).")
     p.add_argument("--effort", choices=["low", "medium", "high"],
                    help="Reasoning effort sent to every panelist (default: each model's own).")
+    p.add_argument("--rate", action="store_true",
+                   help="After the tally, have every panelist score every point from 1 to 5.")
     p.add_argument("--retally", metavar="RUN_DIR",
-                   help="Skip the panel: re-run the tally on an earlier run's answers.")
+                   help="Skip the panel: re-run the tally on an earlier run's answers "
+                   "(with --rate, the panelists then rate the new points).")
     args = p.parse_args(argv)
 
     try:
         if args.retally:
-            return _retally(Path(args.retally).expanduser().resolve(), args.judge)
+            return _retally(Path(args.retally).expanduser().resolve(), args.judge, args.rate)
         return _poll(args)
     except ProviderError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -119,10 +122,10 @@ def _poll(args: argparse.Namespace) -> int:
             print(f"  {mark} {a.model:40} {a.calls:3} calls  ${a.cost:.4f}  {a.seconds:5.0f}s{note}",
                   flush=True)
     ordered = [answers[m] for m in models]
-    return _finish(run_dir, question, repo, args.judge, ordered)
+    return _finish(run_dir, question, repo, args.judge, ordered, config if args.rate else None)
 
 
-def _retally(run_dir: Path, judge: str) -> int:
+def _retally(run_dir: Path, judge: str, rate: bool) -> int:
     data = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
     answers = []
     for raw in data["answers"]:
@@ -132,11 +135,19 @@ def _retally(run_dir: Path, judge: str) -> int:
         a.text = f.read_text(encoding="utf-8").strip() if f.exists() else ""
         answers.append(a)
     repo = Path(data["repo"]) if data.get("repo") else None
+    config = run_dir / "nod" / "nod.toml"
+    if rate and not config.exists():
+        print(f"error: {config} is missing, so the panelists can't be asked to rate", file=sys.stderr)
+        return 2
     print(f"re-tallying {run_dir}")
-    return _finish(run_dir, data["question"], repo, judge, answers)
+    return _finish(run_dir, data["question"], repo, judge, answers, config if rate else None)
 
 
-def _finish(run_dir: Path, question: str, repo: Path | None, judge: str, answers: list[Answer]) -> int:
+def _finish(run_dir: Path, question: str, repo: Path | None, judge: str, answers: list[Answer],
+            rate_config: Path | None = None) -> int:
+    """Tally the answers and write the report. With `rate_config` (the run's Nod
+    config), the panelists that answered then rate the points."""
+
     answered = [(a.model, a.text) for a in answers if a.ok]
     meter = CostMeter(OpenAICompatibleProvider(model=judge, provider_routing={}))
     result, claims, error = None, [], ""
@@ -147,6 +158,13 @@ def _finish(run_dir: Path, question: str, repo: Path | None, judge: str, answers
         except (JudgeError, ProviderError) as exc:
             error = str(exc)
             print(f"tally failed: {error}", file=sys.stderr)
+    raters = [a for a in answers if a.ok]
+    if rate_config and result and result.points:
+        if len(raters) < 2:
+            print("not rating: it takes at least two models that answered")
+        else:
+            print(f"rating {len(result.points)} points with {len(raters)} models...", flush=True)
+            result = rating.rate(result, raters, run_dir, rate_config, repo, on_done=_rated)
     path = report.write(run_dir, question, repo, judge, answers, result, claims,
                         round(meter.cost, 6), error)
     if result:
@@ -154,6 +172,12 @@ def _finish(run_dir: Path, question: str, repo: Path | None, judge: str, answers
         print(f"{len(result.points)} points, {shared} made by more than one model")
     print(f"report: {path}")
     return 0 if answered and not error else 1
+
+
+def _rated(a: Answer, n: int, error: str) -> None:
+    mark = "ok  " if n else "FAIL"
+    note = f"  {error[:100]}" if error else ""
+    print(f"  {mark} {a.model:40} rated {n:3} points{note}", flush=True)
 
 
 def _models(flag: str | None) -> list[str]:
